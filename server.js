@@ -1,86 +1,77 @@
 import express from "express";
 import fetch from "node-fetch";
-
+import crypto from "crypto";
 const app = express();
 const PORT = process.env.PORT || 10000;
-
-// Твои настройки
-const PIXEL_ID = "2274830186287888";
-const ACCESS_TOKEN = "EAAjuGVB95A0BPWYZAp8v6tN3TtWZAZCVIbAPnd7DX7QMQYPYm38MnPbWuAbDhT4PvLeOA9b9lKumAVjeUx10OlZAZBsoA8bEsA26USgeKWW6kxYek01y1uw8PZCnrxzhrBizwlBeYCNumzdBCfWc1HfMphnIkeZA4Ko3KK5gIgRDdpNZCiICG9J8NsFdDsgvgAZDZD";
-
+const PIXEL_ID = process.env.PIXEL_ID || "2369800533823191";
+const ACCESS_TOKEN = process.env.ACCESS_TOKEN || "EAAXCZAnuO1nsBSIwrIz2vZBRDnqBVBdG4QDY6l1SON7wZBgzqfT3STU7euRA8uHhwbHtFy7hDpAQ9toe67MytiFlZBJI98uX1sgogCb5FgyDUeZBWlj8kN8VKNVwiqMEZAqthNpRBf31koaZAMzUr0HHDo99w8aDak8SC6RjKtWKU073GgU3utOdqQuMLaKowZDZD";
+const API_VERSION = "v21.0";
+const hash = (value) =>
+  value ? crypto.createHash("sha256").update(String(value).trim().toLowerCase()).digest("hex") : undefined;
+const isReal = (val) => val && !val.includes("{") && val.trim() !== "";
 app.get("/capi", async (req, res) => {
-  const { event, subid, amount, fbclid, ua, ip, landing, test_event_code } = req.query;
-
+  const { event, subid, amount, fbclid, fbp, ua, ip, landing, test_event_code } = req.query;
   console.log("📩 Входящий постбек:", req.query);
-
   if (!subid) {
-    return res.json({ status: "error", message: "Missing subid" });
+    return res.status(400).json({ status: "error", message: "Missing subid" });
   }
-
-  // 1. ЛОГИКА ДОМЕНА (landing)
-  // Если из Кейтаро пришла абракадабра со скобками или пусто, ставим основной домен
-  let cleanDomain = "betterspin.online"; 
-  if (landing && !landing.includes("{") && landing !== "") {
-    cleanDomain = landing.replace(/^https?:\/\//, '').split('/')[0];
+  let cleanDomain = "orbitflow.lol";
+  if (isReal(landing)) {
+    cleanDomain = landing.replace(/^https?:\/\//, "").split("/")[0];
   }
-  const event_url = `https://${cleanDomain}/`;
-
-  // 2. ЛОГИКА CLICK ID (fbc)
-  // Формируем fbc только если fbclid — это реальный ID (без скобок)
-  let fbc = undefined;
-  if (fbclid && !fbclid.includes("{") && fbclid !== "") {
-    fbc = `fb.1.${Math.floor(Date.now() / 1000)}.${fbclid}`;
+  const event_source_url = `https://${cleanDomain}/`;
+  const fbc = isReal(fbclid)
+    ? `fb.1.${Math.floor(Date.now() / 1000)}.${fbclid}`
+    : undefined;
+  let event_name;
+  if (event === "sale") {
+    event_name = "Purchase";
+  } else {
+    event_name = "CompleteRegistration";
   }
-
-  // 3. ОПРЕДЕЛЕНИЕ ТИПА СОБЫТИЯ
-  const isPurchase = (event === "sale" || event === "lead");
-  const event_name = isPurchase ? "Purchase" : "CompleteRegistration";
-
-  const payload = {
-    data: [
-      {
-        event_name: event_name,
-        event_time: Math.floor(Date.now() / 1000),
-        action_source: "website",
-        event_id: subid,
-        event_source_url: event_url,
-        
-        user_data: {
-          client_user_agent: ua || undefined,
-          client_ip_address: ip || undefined,
-          external_id: subid, // Твой subid из трекера
-          fbc: fbc,
-        },
-
-        custom_data: isPurchase ? {
-          currency: "USD",
-          value: parseFloat(amount) || 0,
-        } : {},
-      },
-    ],
+  const isPurchase = event_name === "Purchase";
+  const event_id = `${subid}_${event_name}`;
+  const user_data = {
+    client_user_agent: ua || undefined,
+    client_ip_address: ip || undefined,
+    external_id: hash(subid),
+    fbc: fbc,
+    fbp: isReal(fbp) ? fbp : undefined,
   };
-
-  if (test_event_code) {
+  Object.keys(user_data).forEach((k) => user_data[k] === undefined && delete user_data[k]);
+  const eventData = {
+    event_name,
+    event_time: Math.floor(Date.now() / 1000),
+    action_source: "website",
+    event_id,
+    event_source_url,
+    user_data,
+    custom_data: isPurchase
+      ? { currency: "USD", value: parseFloat(amount) || 0 }
+      : { content_name: "registration" },
+  };
+  const payload = { data: [eventData] };
+  if (isReal(test_event_code)) {
     payload.test_event_code = test_event_code;
   }
-
   try {
-    const fbURL = `https://graph.facebook.com/v17.0/${PIXEL_ID}/events?access_token=${ACCESS_TOKEN}`;
+    const fbURL = `https://graph.facebook.com/${API_VERSION}/${PIXEL_ID}/events?access_token=${ACCESS_TOKEN}`;
     const response = await fetch(fbURL, {
       method: "POST",
       body: JSON.stringify(payload),
       headers: { "Content-Type": "application/json" },
     });
-
     const result = await response.json();
-    console.log(`📨 Ответ FB для ${subid}:`, result);
-    return res.json({ status: "OK", fb: result });
+    if (result.error) {
+      console.error(`❌ FB error для ${subid}:`, result.error);
+      return res.status(400).json({ status: "fb_error", fb: result });
+    }
+    console.log(`✅ ${event_name} для ${subid}: events_received=${result.events_received}`);
+    return res.json({ status: "OK", event: event_name, fb: result });
   } catch (error) {
-    console.error("❌ Ошибка отправки:", error);
+    console.error("❌ Ошибка отправки:", error.message);
     return res.status(500).json({ status: "error", message: error.message });
   }
 });
-
-app.listen(PORT, () => {
-  console.log(`🚀 Сервер CAPI запущен на порту ${PORT}`);
-});
+app.get("/", (req, res) => res.json({ status: "alive" }));
+app.listen(PORT, () => console.log(`🚀 CAPI сервер на порту ${PORT}`));
