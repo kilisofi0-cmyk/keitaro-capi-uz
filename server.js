@@ -3,8 +3,8 @@ import fetch from "node-fetch";
 import crypto from "crypto";
 const app = express();
 const PORT = process.env.PORT || 10000;
-const PIXEL_ID = process.env.PIXEL_ID || "2369800533823191";
-const ACCESS_TOKEN = process.env.ACCESS_TOKEN || "EAAXCZAnuO1nsBSIwrIz2vZBRDnqBVBdG4QDY6l1SON7wZBgzqfT3STU7euRA8uHhwbHtFy7hDpAQ9toe67MytiFlZBJI98uX1sgogCb5FgyDUeZBWlj8kN8VKNVwiqMEZAqthNpRBf31koaZAMzUr0HHDo99w8aDak8SC6RjKtWKU073GgU3utOdqQuMLaKowZDZD";
+const PIXEL_ID = process.env.PIXEL_ID || "879323721812960";
+const ACCESS_TOKEN = process.env.ACCESS_TOKEN || "EAAPpPjFeXsUBSunwcTknIG1nMMLr7kmcXERZCsW0VVz9dyppOZCNSwqICaKpIYBw2ltvmDYIlg6ZCQcsjH4RlRElrb8s9GZAtNcZB4JKpnZC0UqjfnojTJV9TLJpYMyKLiYXV7nUva36s7rXdF5J61ToP0nieDI3dRQnIZBLZCyuCq1y6wkjz0BKhtGGoeWK0ZAru7wZDZD";
 const API_VERSION = "v21.0";
 const hash = (value) =>
   value ? crypto.createHash("sha256").update(String(value).trim().toLowerCase()).digest("hex") : undefined;
